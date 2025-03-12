@@ -1,11 +1,21 @@
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+
+# Deno
+.deno/
 
 # Fresh build directory
 _fresh/
 # npm dependencies
 node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local files
+*.local

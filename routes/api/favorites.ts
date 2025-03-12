@@ -1,7 +1,11 @@
 import { Handlers } from "$fresh/server.ts";
 
-// 初始化KV数据库
-const kv = await Deno.openKv();
+// 从环境变量获取KV访问令牌
+// const KV_TOKEN = Deno.env.get("DENO_KV_ACCESS_TOKEN");
+
+// 初始化云端KV数据库（Deno Deploy会自动处理KV连接）
+// 在本地开发时使用KV_TOKEN，在Deno Deploy上则不需要提供令牌
+const kv = await Deno.openKv("https://api.deno.com/databases/33201c53-d0e4-46c2-b2fa-fe8433521278/connect");
 
 interface Favorite {
   id: string;
