@@ -8,7 +8,7 @@
     "build": "deno run -A --unstable-kv dev.ts build",
     "preview": "deno run -A --unstable-kv main.ts",
     "update": "deno run -A -r https://fresh.deno.dev/update .",
-    "deploy": "deno run -A --unstable-kv dev.ts build && deployctl deploy --project=linkget --prod ./main.ts"
+    "deploy": "deployctl deploy --project=linkget --prod ./main.ts"
   },
   "lint": {
     "rules": {
