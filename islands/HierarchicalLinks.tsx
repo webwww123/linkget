@@ -88,6 +88,7 @@ interface HierarchicalFavorite {
   hierarchy: HierarchyNode;
   extractedAt: number;
   title: string;
+  links?: string[];
 }
 
 export default function HierarchicalLinks() {
@@ -98,6 +99,16 @@ export default function HierarchicalLinks() {
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [copiedNodes, setCopiedNodes] = useState<Record<string, boolean>>({});
   const userId = typeof window !== 'undefined' ? getUserId() : "anonymous";
+  
+  // 搜索相关状态
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedFavorite, setSelectedFavorite] = useState<string>('all');
+  const [searchResults, setSearchResults] = useState<{
+    favoriteId: string;
+    title: string;
+    links: string[];
+  }[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   
   // 加载收藏的链接
   useEffect(() => {
@@ -265,6 +276,148 @@ export default function HierarchicalLinks() {
     );
   };
 
+  // 计算字符串相似度 (Levenshtein距离的简化版本)
+  const calculateSimilarity = (str1: string, str2: string): number => {
+    const s1 = str1.toLowerCase();
+    const s2 = str2.toLowerCase();
+    
+    // 完全匹配
+    if (s1 === s2) return 1;
+    
+    // 包含关系
+    if (s1.includes(s2) || s2.includes(s1)) {
+      const longerLength = Math.max(s1.length, s2.length);
+      const shorterLength = Math.min(s1.length, s2.length);
+      return shorterLength / longerLength;
+    }
+    
+    // 字符重叠检查
+    let matches = 0;
+    for (let i = 0; i < s1.length; i++) {
+      if (s2.includes(s1[i])) matches++;
+    }
+    return matches / Math.max(s1.length, s2.length);
+  };
+
+  // 执行搜索
+  const performSearch = () => {
+    if (!searchTerm.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    setIsSearching(true);
+    
+    try {
+      const results: {
+        favoriteId: string;
+        title: string;
+        links: string[];
+      }[] = [];
+      
+      const searchTermLower = searchTerm.trim().toLowerCase();
+      // 短关键词使用更低的阈值
+      const similarityThreshold = searchTermLower.length <= 3 ? 0.2 : 0.3;
+      
+      favorites.forEach(favorite => {
+        // 如果选择了特定收藏，只在该收藏中搜索
+        if (selectedFavorite !== 'all' && favorite.id !== selectedFavorite) {
+          return;
+        }
+        
+        const matchedLinks: string[] = [];
+        
+        // 递归搜索链接
+        const searchInHierarchy = (node: HierarchyNode) => {
+          if (node._links) {
+            node._links.forEach(link => {
+              try {
+                const url = new URL(link);
+                // 同时检查域名和路径
+                const hostname = url.hostname.toLowerCase();
+                const pathname = url.pathname.toLowerCase();
+                const fullUrlLower = link.toLowerCase();
+                
+                // 精确匹配：如果URL的任何部分包含搜索词，直接匹配
+                if (hostname.includes(searchTermLower) || 
+                    pathname.includes(searchTermLower) || 
+                    fullUrlLower.includes(searchTermLower)) {
+                  matchedLinks.push(link);
+                  return; // 已找到匹配，跳过相似度检查
+                }
+                
+                // 如果没有直接包含，再尝试相似度匹配
+                // 对域名检查相似度
+                const hostnameSimilarity = calculateSimilarity(searchTermLower, hostname);
+                if (hostnameSimilarity > similarityThreshold) {
+                  matchedLinks.push(link);
+                  return;
+                }
+                
+                // 对路径检查相似度
+                const pathSimilarity = calculateSimilarity(searchTermLower, pathname);
+                if (pathSimilarity > similarityThreshold) {
+                  matchedLinks.push(link);
+                  return;
+                }
+                
+                // 检查路径的各个部分
+                const pathParts = pathname.split('/').filter(p => p);
+                for (const part of pathParts) {
+                  if (part.includes(searchTermLower) || 
+                      calculateSimilarity(searchTermLower, part) > similarityThreshold) {
+                    matchedLinks.push(link);
+                    return;
+                  }
+                }
+              } catch (e) {
+                // 忽略无效URL
+              }
+            });
+          }
+          
+          // 递归搜索子节点
+          Object.keys(node).filter(k => !k.startsWith('_')).forEach(key => {
+            searchInHierarchy(node[key]);
+          });
+        };
+        
+        const hierarchy = favorite.hierarchy || organizeLinksHierarchically(favorite.links || []);
+        Object.keys(hierarchy).filter(k => !k.startsWith('_')).forEach(key => {
+          searchInHierarchy(hierarchy[key]);
+        });
+        
+        if (matchedLinks.length > 0) {
+          results.push({
+            favoriteId: favorite.id,
+            title: favorite.title || favorite.rootUrl,
+            links: matchedLinks
+          });
+        }
+      });
+      
+      setSearchResults(results);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(`搜索时出错: ${errorMessage}`);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+  
+  // 当搜索词或选定的收藏变化时执行搜索
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm.trim().length > 0) {
+        performSearch();
+      } else {
+        setSearchResults([]);
+      }
+    }, 300); // 添加延迟以减少频繁搜索
+    
+    return () => clearTimeout(timer);
+  }, [searchTerm, selectedFavorite, favorites]);
+
   return (
     <div class="w-full max-w-4xl mx-auto p-4 hierarchical-links">
       <div class="flex justify-between items-center mb-4">
@@ -280,6 +433,100 @@ export default function HierarchicalLinks() {
           刷新
         </button>
       </div>
+      
+      {/* 搜索区域 */}
+      {favorites.length > 0 && (
+        <div class="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          <h3 class="text-lg font-medium mb-3">搜索收藏链接</h3>
+          <div class="flex flex-col sm:flex-row gap-3">
+            <select 
+              class="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 flex-1 sm:max-w-xs"
+              value={selectedFavorite}
+              onChange={(e) => setSelectedFavorite((e.target as HTMLSelectElement).value)}
+            >
+              <option value="all">所有收藏</option>
+              {favorites.map(fav => (
+                <option key={fav.id} value={fav.id}>
+                  {fav.title || fav.rootUrl}
+                </option>
+              ))}
+            </select>
+            
+            <div class="flex flex-1 relative">
+              <input 
+                type="text" 
+                placeholder="输入搜索关键词 (支持模糊搜索)" 
+                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm((e.target as HTMLInputElement).value)}
+              />
+              {searchTerm && (
+                <button 
+                  class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  onClick={() => setSearchTerm('')}
+                  aria-label="清除搜索"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* 搜索结果区域 */}
+          {isSearching ? (
+            <div class="flex justify-center items-center p-4">
+              <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : searchTerm.trim() && searchResults.length === 0 ? (
+            <div class="p-4 text-center text-gray-500">
+              未找到与"{searchTerm}"相关的链接
+            </div>
+          ) : searchResults.length > 0 && (
+            <div class="mt-4 border-t pt-4">
+              <h4 class="font-medium mb-2">搜索结果: {searchResults.reduce((acc, curr) => acc + curr.links.length, 0)} 个链接</h4>
+              <div class="space-y-4">
+                {searchResults.map(result => (
+                  <div key={result.favoriteId} class="p-3 bg-gray-50 rounded-lg">
+                    <h5 class="font-medium mb-2 flex items-center gap-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-yellow-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                      {result.title}
+                    </h5>
+                    <ul class="space-y-1">
+                      {result.links.map((link, i) => (
+                        <li key={`${result.favoriteId}-${i}`} class="flex items-center py-1 px-2 hover:bg-gray-100 rounded">
+                          <a href={link} target="_blank" rel="noopener noreferrer" class="flex-1 overflow-hidden text-overflow-ellipsis text-blue-600 hover:underline">
+                            {new URL(link).pathname}
+                          </a>
+                          <button 
+                            onClick={() => copyNodeLinks([link], `search-${result.favoriteId}-${i}`)}
+                            class={`px-2 py-1 text-xs ${copiedNodes[`search-${result.favoriteId}-${i}`] ? 'bg-green-100 text-green-800' : 'text-gray-600 hover:bg-gray-200'} rounded`}
+                          >
+                            {copiedNodes[`search-${result.favoriteId}-${i}`] ? '已复制' : '复制'}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {result.links.length > 1 && (
+                      <div class="mt-2 flex justify-end">
+                        <button 
+                          onClick={() => copyNodeLinks(result.links, `search-all-${result.favoriteId}`)}
+                          class={`px-3 py-1 text-sm ${copiedNodes[`search-all-${result.favoriteId}`] ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'} rounded-lg flex items-center gap-1`}
+                        >
+                          {copiedNodes[`search-all-${result.favoriteId}`] ? '已复制全部!' : '复制全部链接'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       
       {error && (
         <div class={`p-4 mb-6 ${error.includes('成功') ? 'bg-green-100 border-l-4 border-green-500 text-green-700' : 'bg-red-100 border-l-4 border-red-500 text-red-700'} transition-opacity duration-300`}>
