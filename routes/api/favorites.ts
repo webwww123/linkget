@@ -8,12 +8,79 @@ import { Handlers } from "$fresh/server.ts";
 // 在本地环境中，我们可以使用--unstable-kv标志启动
 const kv = await Deno.openKv();
 
+interface HierarchyNode {
+  _links: string[];
+  _fullPath: string;
+  _isExpanded: boolean;
+  _originalUrl?: string;
+  [key: string]: any;
+}
+
 interface Favorite {
   id: string;
   userId: string;
-  url: string;
+  rootUrl: string;
   title: string;
-  createdAt: number;
+  links?: string[];
+  hierarchy?: HierarchyNode;
+  extractedAt: number;
+}
+
+// 将链接转换为层级结构
+function organizeLinksHierarchically(links: string[]) {
+  const hierarchy: any = {};
+  
+  links.forEach(link => {
+    try {
+      // 解析URL
+      const url = new URL(link);
+      const hostPath = url.hostname + url.pathname;
+      // 按路径分割
+      const parts = hostPath.split('/').filter(p => p);
+      
+      // 递归构建层级树
+      let current = hierarchy;
+      let currentPath = '';
+      
+      // 先添加域名作为第一级
+      const domain = parts[0];
+      if (!current[domain]) {
+        current[domain] = {
+          _links: [],
+          _fullPath: domain,
+          _isExpanded: true,
+          _originalUrl: `${url.protocol}//${domain}`
+        };
+      }
+      current[domain]._links.push(link);
+      current = current[domain];
+      currentPath = domain;
+      
+      // 添加剩余路径
+      for (let i = 1; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part) continue;
+        
+        currentPath = currentPath ? `${currentPath}/${part}` : part;
+        
+        if (!current[part]) {
+          current[part] = {
+            _links: [],
+            _fullPath: currentPath,
+            _isExpanded: i < 3, // 默认展开前三级
+            _originalUrl: link.substring(0, link.indexOf(currentPath) + currentPath.length)
+          };
+        }
+        
+        current[part]._links.push(link);
+        current = current[part];
+      }
+    } catch (e) {
+      console.error("无法解析URL:", link, e);
+    }
+  });
+  
+  return hierarchy;
 }
 
 export const handler: Handlers = {
@@ -52,24 +119,46 @@ export const handler: Handlers = {
   async POST(req) {
     try {
       const body = await req.json();
-      const { userId, url, title } = body;
+      const { userId, url, title, links } = body;
       
-      if (!userId || !url) {
+      if (!userId || (!url && !links)) {
         return Response.json(
-          { error: "用户ID和URL是必需的" },
+          { error: "用户ID和URL(或链接列表)是必需的" },
           { status: 400 }
         );
       }
       
       // 创建一个唯一ID
       const id = crypto.randomUUID();
-      const favorite: Favorite = {
-        id,
-        userId,
-        url,
-        title: title || url,
-        createdAt: Date.now(),
-      };
+      
+      let favorite: Favorite;
+      
+      if (links && Array.isArray(links)) {
+        // 如果提供了链接列表，则创建层级结构
+        const hierarchy = organizeLinksHierarchically(links);
+        // 从第一个链接获取根URL，或者使用title
+        const rootUrl = links.length > 0 ? new URL(links[0]).hostname : title;
+        
+        favorite = {
+          id,
+          userId,
+          rootUrl,
+          title: title || rootUrl,
+          links,
+          hierarchy,
+          extractedAt: Date.now(),
+        };
+      } else {
+        // 如果只提供了单个URL，创建简单收藏
+        favorite = {
+          id,
+          userId,
+          rootUrl: new URL(url).hostname,
+          title: title || url,
+          links: [url],
+          extractedAt: Date.now(),
+        };
+      }
       
       // 保存到KV数据库
       await kv.set(["favorites", userId, id], favorite);

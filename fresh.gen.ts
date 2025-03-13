@@ -11,6 +11,7 @@ import * as $greet_name_ from "./routes/greet/[name].tsx";
 import * as $index from "./routes/index.tsx";
 import * as $Counter from "./islands/Counter.tsx";
 import * as $FavoriteLinks from "./islands/FavoriteLinks.tsx";
+import * as $HierarchicalLinks from "./islands/HierarchicalLinks.tsx";
 import * as $LinkExtractor from "./islands/LinkExtractor.tsx";
 import type { Manifest } from "$fresh/server.ts";
 
@@ -27,6 +28,7 @@ const manifest = {
   islands: {
     "./islands/Counter.tsx": $Counter,
     "./islands/FavoriteLinks.tsx": $FavoriteLinks,
+    "./islands/HierarchicalLinks.tsx": $HierarchicalLinks,
     "./islands/LinkExtractor.tsx": $LinkExtractor,
   },
   baseUrl: import.meta.url,
