@@ -110,9 +110,27 @@ export default function HierarchicalLinks() {
   }[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   
+  // 常用链接相关状态
+  const [frequentLinks, setFrequentLinks] = useState<{
+    url: string;
+    count: number;
+    lastUsed: number;
+  }[]>([]);
+  const [frequentLinkGroups, setFrequentLinkGroups] = useState<{
+    id: string;
+    links: string[];
+    count: number;
+    lastUsed: number;
+    title: string;
+  }[]>([]);
+  const [showFrequentLinks, setShowFrequentLinks] = useState(true);
+  const [showFrequentGroups, setShowFrequentGroups] = useState(true);
+  const [expandedFrequentGroups, setExpandedFrequentGroups] = useState<Record<string, boolean>>({});
+  
   // 加载收藏的链接
   useEffect(() => {
     fetchFavorites();
+    loadFrequentLinks();
   }, []);
   
   // 获取收藏的链接
@@ -134,6 +152,120 @@ export default function HierarchicalLinks() {
       setError(`加载收藏时出错: ${err.message}`);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // 加载常用链接
+  const loadFrequentLinks = () => {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        // 加载单个链接
+        const storedLinks = localStorage.getItem(`linkExtractor_frequentLinks_${userId}`);
+        if (storedLinks) {
+          const links = JSON.parse(storedLinks);
+          links.sort((a: any, b: any) => b.count - a.count || b.lastUsed - a.lastUsed);
+          setFrequentLinks(links.slice(0, 5)); // 只显示前5个单链接
+        }
+        
+        // 加载链接组
+        const storedGroups = localStorage.getItem(`linkExtractor_frequentGroups_${userId}`);
+        if (storedGroups) {
+          const groups = JSON.parse(storedGroups);
+          groups.sort((a: any, b: any) => b.count - a.count || b.lastUsed - a.lastUsed);
+          setFrequentLinkGroups(groups.slice(0, 5)); // 只显示前5个组
+          
+          // 默认展开第一个组
+          if (groups.length > 0) {
+            setExpandedFrequentGroups({ [groups[0].id]: true });
+          }
+        }
+      } catch (err) {
+        console.error("加载常用链接失败:", err instanceof Error ? err.message : String(err));
+      }
+    }
+  };
+  
+  // 更新链接复制计数
+  const updateLinkCopyCount = (link: string) => {
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const storedLinks = localStorage.getItem(`linkExtractor_frequentLinks_${userId}`) || '[]';
+        const links = JSON.parse(storedLinks);
+        
+        const existingLink = links.find((item: any) => item.url === link);
+        if (existingLink) {
+          existingLink.count += 1;
+          existingLink.lastUsed = Date.now();
+        } else {
+          links.push({
+            url: link,
+            count: 1,
+            lastUsed: Date.now()
+          });
+        }
+        
+        // 保存回本地存储
+        localStorage.setItem(`linkExtractor_frequentLinks_${userId}`, JSON.stringify(links));
+        
+        // 更新状态
+        links.sort((a: any, b: any) => b.count - a.count || b.lastUsed - a.lastUsed);
+        setFrequentLinks(links.slice(0, 5));
+      } catch (err) {
+        console.error("更新链接计数失败:", err);
+      }
+    }
+  };
+  
+  // 更新链接组复制计数
+  const updateLinkGroupCopyCount = (links: string[], path: string = '') => {
+    if (typeof localStorage !== 'undefined' && links.length > 1) {
+      try {
+        // 生成组ID (可以使用路径或其他标识)
+        const groupId = path || links.join('').substring(0, 30);
+        
+        // 尝试为组生成标题
+        let title = '';
+        if (links.length > 0) {
+          try {
+            const firstUrl = new URL(links[0]);
+            title = `${firstUrl.hostname} (${links.length}个链接)`;
+          } catch (e) {
+            title = `链接组 (${links.length}个)`;
+          }
+        }
+        
+        const storedGroups = localStorage.getItem(`linkExtractor_frequentGroups_${userId}`) || '[]';
+        const groups = JSON.parse(storedGroups);
+        
+        // 检查是否有相同的链接组
+        // 简化的比较：只检查链接数量和第一个链接是否相同
+        const existingGroup = groups.find((group: any) => {
+          if (group.links.length !== links.length) return false;
+          return group.links[0] === links[0];
+        });
+        
+        if (existingGroup) {
+          existingGroup.count += 1;
+          existingGroup.lastUsed = Date.now();
+        } else {
+          groups.push({
+            id: groupId,
+            links: links,
+            count: 1,
+            lastUsed: Date.now(),
+            title: title
+          });
+        }
+        
+        // 保存回本地存储
+        localStorage.setItem(`linkExtractor_frequentGroups_${userId}`, JSON.stringify(groups));
+        
+        // 更新状态
+        groups.sort((a: any, b: any) => b.count - a.count || b.lastUsed - a.lastUsed);
+        setFrequentLinkGroups(groups.slice(0, 5));
+      } catch (err) {
+        console.error("更新链接组计数失败:", err instanceof Error ? err.message : String(err));
+      }
     }
   };
   
@@ -168,6 +300,14 @@ export default function HierarchicalLinks() {
       // 显示成功提示
       setError(`已成功复制 ${links.length} 个链接！`);
       
+      // 更新常用链接
+      links.forEach(link => updateLinkCopyCount(link));
+      
+      // 如果是多个链接，更新链接组
+      if (links.length > 1) {
+        updateLinkGroupCopyCount(links, path);
+      }
+      
       // 2秒后重置复制状态和提示
       setTimeout(() => {
         setCopiedNodes(prev => ({ ...prev, [path]: false }));
@@ -183,6 +323,14 @@ export default function HierarchicalLinks() {
     setExpandedNodes(prev => ({
       ...prev,
       [path]: !prev[path]
+    }));
+  };
+  
+  // 切换链接组的展开/折叠状态
+  const toggleFrequentGroupExpanded = (groupId: string) => {
+    setExpandedFrequentGroups(prev => ({
+      ...prev,
+      [groupId]: !prev[groupId]
     }));
   };
   
@@ -418,6 +566,18 @@ export default function HierarchicalLinks() {
     return () => clearTimeout(timer);
   }, [searchTerm, selectedFavorite, favorites]);
 
+  // 清空常用链接
+  const clearFrequentLinks = () => {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(`linkExtractor_frequentLinks_${userId}`);
+      localStorage.removeItem(`linkExtractor_frequentGroups_${userId}`);
+      setFrequentLinks([]);
+      setFrequentLinkGroups([]);
+      setError("已清空常用链接列表");
+      setTimeout(() => setError(null), 2000);
+    }
+  };
+
   return (
     <div class="w-full max-w-4xl mx-auto p-4 hierarchical-links">
       <div class="flex justify-between items-center mb-4">
@@ -433,6 +593,154 @@ export default function HierarchicalLinks() {
           刷新
         </button>
       </div>
+      
+      {/* 常用链接区域 */}
+      {(frequentLinks.length > 0 || frequentLinkGroups.length > 0) && (
+        <div class="mb-6 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-lg font-medium flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V8z" clip-rule="evenodd" />
+              </svg>
+              我常复制的链接
+            </h3>
+            <div class="flex items-center gap-2">
+              <button 
+                onClick={() => setShowFrequentLinks(!showFrequentLinks)}
+                class="text-gray-500 hover:text-gray-700 focus:outline-none"
+                aria-label={showFrequentLinks ? "折叠" : "展开"}
+              >
+                {showFrequentLinks ? "▼" : "▶"}
+              </button>
+              <button
+                onClick={clearFrequentLinks}
+                class="p-1.5 text-gray-400 hover:text-red-500 rounded-full focus:outline-none"
+                title="清空常用链接"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          {showFrequentLinks && (
+            <div class="space-y-6">
+              {/* 常用链接组 */}
+              {frequentLinkGroups.length > 0 && (
+                <div class="border-b pb-4">
+                  <h4 class="text-md font-medium mb-3 flex items-center justify-between">
+                    <span class="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+                      </svg>
+                      常用链接组
+                    </span>
+                    <button 
+                      onClick={() => setShowFrequentGroups(!showFrequentGroups)}
+                      class="text-gray-500 hover:text-gray-700 focus:outline-none text-sm"
+                    >
+                      {showFrequentGroups ? "折叠全部" : "展开全部"}
+                    </button>
+                  </h4>
+                  
+                  {showFrequentGroups && (
+                    <ul class="space-y-3">
+                      {frequentLinkGroups.map((group) => {
+                        const isExpanded = expandedFrequentGroups[group.id] === true;
+                        const hierarchy = organizeLinksHierarchically(group.links);
+                        
+                        return (
+                          <li key={group.id} class="bg-gray-50 rounded-lg overflow-hidden">
+                            <div class="flex items-center justify-between py-2 px-3 cursor-pointer hover:bg-gray-100"
+                                onClick={() => toggleFrequentGroupExpanded(group.id)}>
+                              <div class="flex items-center gap-2 flex-1">
+                                <span class="text-gray-500">
+                                  {isExpanded ? "▼" : "▶"}
+                                </span>
+                                <span class="font-medium">{group.title}</span>
+                                <span class="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                                  {group.count}次
+                                </span>
+                              </div>
+                              <div class="flex items-center gap-2">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    copyNodeLinks(group.links, `frequent-group-${group.id}`);
+                                  }}
+                                  class={`px-2 py-1 text-xs rounded ${copiedNodes[`frequent-group-${group.id}`] ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                >
+                                  {copiedNodes[`frequent-group-${group.id}`] ? '已复制' : '复制全部'}
+                                </button>
+                              </div>
+                            </div>
+                            
+                            {isExpanded && (
+                              <div class="hierarchy-container p-3 pt-0 border-t border-gray-200">
+                                <ul class="hierarchy-root">
+                                  {Object.keys(hierarchy).filter(k => !k.startsWith('_')).map(key => 
+                                    renderHierarchy(hierarchy[key], key, `frequent-${group.id}-${key}`, 0)
+                                  )}
+                                </ul>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
+              
+              {/* 单个常用链接 */}
+              {frequentLinks.length > 0 && (
+                <div>
+                  <h4 class="text-md font-medium mb-3 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M12.586 4.586a2 2 0 112.828 2.828l-3 3a2 2 0 01-2.828 0 1 1 0 00-1.414 1.414 4 4 0 005.656 0l3-3a4 4 0 00-5.656-5.656l-1.5 1.5a1 1 0 101.414 1.414l1.5-1.5zm-5 5a2 2 0 012.828 0 1 1 0 101.414-1.414 4 4 0 00-5.656 0l-3 3a4 4 0 105.656 5.656l1.5-1.5a1 1 0 10-1.414-1.414l-1.5 1.5a2 2 0 11-2.828-2.828l3-3z" clip-rule="evenodd" />
+                    </svg>
+                    单个常用链接
+                  </h4>
+                  <ul class="space-y-2">
+                    {frequentLinks.map((link, index) => {
+                      try {
+                        const url = new URL(link.url);
+                        const pathName = url.pathname;
+                        const displayName = pathName.split('/').pop() || url.hostname;
+                        
+                        return (
+                          <li key={link.url} class="flex items-center justify-between py-2 px-3 bg-gray-50 hover:bg-gray-100 rounded-lg">
+                            <div class="flex items-center gap-3 flex-1 min-w-0">
+                              <span class="text-gray-500 font-medium">{index + 1}</span>
+                              <a href={link.url} target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline truncate">
+                                {displayName}
+                              </a>
+                              <span class="text-xs text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">
+                                {link.count}次
+                              </span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <button 
+                                onClick={() => copyNodeLinks([link.url], `frequent-${index}`)}
+                                class={`px-2 py-1 text-xs rounded ${copiedNodes[`frequent-${index}`] ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                              >
+                                {copiedNodes[`frequent-${index}`] ? '已复制' : '复制'}
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      } catch (e) {
+                        return null;
+                      }
+                    })}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       
       {/* 搜索区域 */}
       {favorites.length > 0 && (
