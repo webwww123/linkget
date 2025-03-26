@@ -6,18 +6,24 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>链接提取器 - 收集网页上的所有链接</title>
-        <meta name="description" content="一个简单的工具，帮助你从任何网页中提取所有链接，并允许保存层级化收藏。" />
+        <title>链接提取器 - LinkGet</title>
+        <meta name="description" content="快速提取网页链接，方便整理和收藏" />
         <link rel="stylesheet" href={asset("/styles.css")} />
       </Head>
-      <main>
-        <div class="p-4 mx-auto max-w-screen-md">
-          <LinkExtractor />
-          <div class="mt-8">
-            <HierarchicalLinks />
+      <div class="min-h-screen bg-gray-100">
+        <nav class="bg-white shadow-sm p-4">
+          <div class="max-w-screen-lg mx-auto flex justify-between">
+            <a href="/" class="font-bold text-xl">LinkGet</a>
+            <div class="space-x-4">
+              <a href="/" class="font-medium text-blue-600">链接提取</a>
+              <a href="/docsearch" class="hover:text-blue-600">文档搜索</a>
+            </div>
           </div>
-        </div>
-      </main>
+        </nav>
+        
+        <LinkExtractor />
+        <HierarchicalLinks />
+      </div>
     </>
   );
 }
