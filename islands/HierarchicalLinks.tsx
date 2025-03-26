@@ -98,7 +98,7 @@ export default function HierarchicalLinks() {
   const [copied, setCopied] = useState<Record<string, boolean>>({});
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [copiedNodes, setCopiedNodes] = useState<Record<string, boolean>>({});
-  const userId = typeof window !== 'undefined' ? getUserId() : "anonymous";
+  const [userId] = useState(typeof window !== 'undefined' ? getUserId() : "anonymous");
   
   // 搜索相关状态
   const [searchTerm, setSearchTerm] = useState('');
@@ -160,8 +160,8 @@ export default function HierarchicalLinks() {
       
       const data = await response.json();
       setFavorites(data.favorites || []);
-    } catch (err) {
-      setError(`加载收藏时出错: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`加载收藏时出错: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setLoading(false);
     }
@@ -295,8 +295,8 @@ export default function HierarchicalLinks() {
       
       // 更新收藏列表
       setFavorites(favorites.filter(fav => fav.id !== id));
-    } catch (err) {
-      setError(`删除收藏时出错: ${err.message}`);
+    } catch (err: unknown) {
+      setError(`删除收藏时出错: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
   
@@ -960,6 +960,18 @@ export default function HierarchicalLinks() {
                           </svg>
                         )}
                       </button>
+                      <a
+                        href={`${window.location.origin}/${sitemap.fileName}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="p-2 text-indigo-600 hover:bg-indigo-50 rounded"
+                        title="直接访问Sitemap"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+                          <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+                        </svg>
+                      </a>
                       <button
                         onClick={() => downloadSitemap(sitemap.id)}
                         class="p-2 text-green-600 hover:bg-green-50 rounded"

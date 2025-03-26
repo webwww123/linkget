@@ -96,6 +96,7 @@ export default function LinkExtractor() {
   const userId = typeof window !== 'undefined' ? getUserId() : "anonymous";
   const [generatingSitemap, setGeneratingSitemap] = useState(false);
   const [sitemapGenerated, setSitemapGenerated] = useState<{id: string, fileName: string} | null>(null);
+  const [sitemapUrlCopied, setSitemapUrlCopied] = useState(false);
 
   const extractLinks = async (e: Event) => {
     e.preventDefault();
@@ -448,6 +449,25 @@ export default function LinkExtractor() {
     }
   };
 
+  // 复制Sitemap公共URL
+  const copySitemapUrl = () => {
+    if (!sitemapGenerated) return;
+    
+    const baseUrl = window.location.origin;
+    const sitemapUrl = `${baseUrl}/${sitemapGenerated.fileName}`;
+    
+    navigator.clipboard.writeText(sitemapUrl)
+      .then(() => {
+        setSitemapUrlCopied(true);
+        setTimeout(() => {
+          setSitemapUrlCopied(false);
+        }, 2000);
+      })
+      .catch((err) => {
+        setError(`复制URL失败: ${err instanceof Error ? err.message : String(err)}`);
+      });
+  };
+
   return (
     <div class="w-full max-w-4xl mx-auto p-4">
       <h1 class="text-3xl font-bold mb-6 text-center text-gray-800">链接提取器</h1>
@@ -535,12 +555,48 @@ export default function LinkExtractor() {
       {sitemapGenerated && (
         <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
           <span>Sitemap已生成: {sitemapGenerated.fileName}</span>
-          <button 
-            onClick={downloadSitemap}
-            class="bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded text-sm"
-          >
-            下载Sitemap
-          </button>
+          <div class="flex space-x-2">
+            <button
+              onClick={copySitemapUrl}
+              class="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded text-sm flex items-center gap-1"
+            >
+              {sitemapUrlCopied ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                    <path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm9.707 5.707a1 1 0 00-1.414-1.414L9 12.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                  </svg>
+                  已复制
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                    <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                  </svg>
+                  复制链接
+                </>
+              )}
+            </button>
+            <a
+              href={`${window.location.origin}/${sitemapGenerated.fileName}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="bg-indigo-500 hover:bg-indigo-600 text-white py-1 px-3 rounded text-sm flex items-center gap-1"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+                <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+              </svg>
+              访问
+            </a>
+            <button 
+              onClick={downloadSitemap}
+              class="bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded text-sm"
+            >
+              下载Sitemap
+            </button>
+          </div>
         </div>
       )}
       
