@@ -94,6 +94,8 @@ export default function LinkExtractor() {
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
   const [copiedNodes, setCopiedNodes] = useState<Record<string, boolean>>({});
   const userId = typeof window !== 'undefined' ? getUserId() : "anonymous";
+  const [generatingSitemap, setGeneratingSitemap] = useState(false);
+  const [sitemapGenerated, setSitemapGenerated] = useState<{id: string, fileName: string} | null>(null);
 
   const extractLinks = async (e: Event) => {
     e.preventDefault();
@@ -380,6 +382,72 @@ export default function LinkExtractor() {
     );
   };
 
+  // 生成Sitemap XML功能
+  const generateSitemap = async () => {
+    if (links.length === 0) {
+      setError("需要先提取链接才能生成Sitemap");
+      return;
+    }
+    
+    try {
+      setGeneratingSitemap(true);
+      setSitemapGenerated(null);
+      setError(null);
+      
+      // 用域名作为标题
+      let title = "Sitemap";
+      try {
+        if (url.value) {
+          const urlObj = new URL(url.value);
+          title = urlObj.hostname;
+        } else if (links.length > 0) {
+          const urlObj = new URL(links[0]);
+          title = urlObj.hostname;
+        }
+      } catch (e) {
+        // 忽略解析错误，使用默认标题
+      }
+      
+      const response = await fetch("/api/sitemap", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          title,
+          links,
+        }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.sitemap) {
+          setSitemapGenerated({
+            id: data.sitemap.id,
+            fileName: data.sitemap.fileName
+          });
+        } else {
+          throw new Error("生成Sitemap失败，请重试");
+        }
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "生成Sitemap失败，请重试");
+      }
+    } catch (err) {
+      setError(`生成Sitemap失败: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setGeneratingSitemap(false);
+    }
+  };
+
+  // 下载生成的Sitemap
+  const downloadSitemap = () => {
+    if (sitemapGenerated) {
+      window.open(`/api/sitemap?userId=${userId}&id=${sitemapGenerated.id}`, '_blank');
+    }
+  };
+
   return (
     <div class="w-full max-w-4xl mx-auto p-4">
       <h1 class="text-3xl font-bold mb-6 text-center text-gray-800">链接提取器</h1>
@@ -434,6 +502,16 @@ export default function LinkExtractor() {
                 </svg>
                 {copied ? "已复制!" : "全部复制"}
               </button>
+              <button
+                onClick={generateSitemap}
+                disabled={generatingSitemap}
+                class="px-4 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-lg flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+                {generatingSitemap ? "生成中..." : "生成Sitemap"}
+              </button>
             </div>
           </div>
           
@@ -451,6 +529,18 @@ export default function LinkExtractor() {
               </div>
             )}
           </div>
+        </div>
+      )}
+      
+      {sitemapGenerated && (
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4 flex justify-between items-center">
+          <span>Sitemap已生成: {sitemapGenerated.fileName}</span>
+          <button 
+            onClick={downloadSitemap}
+            class="bg-green-500 hover:bg-green-600 text-white py-1 px-3 rounded text-sm"
+          >
+            下载Sitemap
+          </button>
         </div>
       )}
       

@@ -127,10 +127,22 @@ export default function HierarchicalLinks() {
   const [showFrequentGroups, setShowFrequentGroups] = useState(true);
   const [expandedFrequentGroups, setExpandedFrequentGroups] = useState<Record<string, boolean>>({});
   
+  // Sitemap相关状态
+  const [sitemaps, setSitemaps] = useState<{
+    id: string;
+    fileName: string;
+    title: string;
+    createdAt: number;
+    links: number;
+  }[]>([]);
+  const [loadingSitemaps, setLoadingSitemaps] = useState(false);
+  const [showSitemaps, setShowSitemaps] = useState(true);
+  
   // 加载收藏的链接
   useEffect(() => {
     fetchFavorites();
     loadFrequentLinks();
+    fetchSitemaps();
   }, []);
   
   // 获取收藏的链接
@@ -578,6 +590,57 @@ export default function HierarchicalLinks() {
     }
   };
 
+  // 获取所有Sitemap
+  const fetchSitemaps = async () => {
+    if (!userId) return;
+    
+    try {
+      setLoadingSitemaps(true);
+      
+      const response = await fetch(`/api/sitemap?userId=${userId}`);
+      
+      if (response.ok) {
+        const data = await response.json();
+        setSitemaps(data.sitemaps || []);
+      } else {
+        console.error("加载Sitemap失败");
+      }
+    } catch (err: unknown) {
+      console.error("加载Sitemap出错:", err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingSitemaps(false);
+    }
+  };
+  
+  // 下载特定的Sitemap
+  const downloadSitemap = (id: string) => {
+    window.open(`/api/sitemap?userId=${userId}&id=${id}`, '_blank');
+  };
+  
+  // 复制Sitemap公共URL
+  const copySitemapUrl = (fileName: string) => {
+    const baseUrl = window.location.origin;
+    const sitemapUrl = `${baseUrl}/${fileName}`;
+    
+    navigator.clipboard.writeText(sitemapUrl)
+      .then(() => {
+        // 显示复制成功提示
+        const newCopied = { ...copied };
+        newCopied[fileName] = true;
+        setCopied(newCopied);
+        
+        // 2秒后重置复制状态
+        setTimeout(() => {
+          const resetCopied = { ...copied };
+          resetCopied[fileName] = false;
+          setCopied(resetCopied);
+        }, 2000);
+      })
+      .catch((err: unknown) => {
+        console.error("复制URL失败:", err instanceof Error ? err.message : String(err));
+      });
+  };
+
   return (
     <div class="w-full max-w-4xl mx-auto p-4 hierarchical-links">
       <div class="flex justify-between items-center mb-4">
@@ -835,6 +898,85 @@ export default function HierarchicalLinks() {
           )}
         </div>
       )}
+      
+      {/* Sitemap部分 */}
+      <div class="mb-6">
+        <div
+          class="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm cursor-pointer"
+          onClick={() => setShowSitemaps(!showSitemaps)}
+        >
+          <h2 class="text-xl font-semibold">
+            Sitemap文件 {sitemaps.length > 0 ? `(${sitemaps.length})` : ''}
+          </h2>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class={`h-5 w-5 transform ${showSitemaps ? 'rotate-180' : ''} transition-transform`}
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </div>
+        
+        {showSitemaps && (
+          <div class="mt-2 p-4 bg-white rounded-lg shadow-sm">
+            {loadingSitemaps ? (
+              <div class="text-center p-4">
+                <span class="text-gray-500">加载中...</span>
+              </div>
+            ) : sitemaps.length === 0 ? (
+              <div class="text-center p-4">
+                <span class="text-gray-500">暂无Sitemap文件</span>
+                <p class="text-sm text-gray-400 mt-2">
+                  在提取链接页面使用"生成Sitemap"功能可以创建Sitemap文件
+                </p>
+              </div>
+            ) : (
+              <div class="space-y-2">
+                {sitemaps.map(sitemap => (
+                  <div key={sitemap.id} class="flex items-center justify-between p-3 border rounded hover:bg-gray-50">
+                    <div>
+                      <div class="font-medium">{sitemap.title}</div>
+                      <div class="text-sm text-gray-500">
+                        {sitemap.fileName} • {formatDate(sitemap.createdAt)} • {sitemap.links}个链接
+                      </div>
+                    </div>
+                    <div class="flex space-x-2">
+                      <button
+                        onClick={() => copySitemapUrl(sitemap.fileName)}
+                        class="p-2 text-blue-600 hover:bg-blue-50 rounded"
+                        title="复制公共URL"
+                      >
+                        {copied[sitemap.fileName] ? (
+                          <span class="text-green-600 text-sm">已复制</span>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M8 3a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" />
+                            <path d="M6 3a2 2 0 00-2 2v11a2 2 0 002 2h8a2 2 0 002-2V5a2 2 0 00-2-2 3 3 0 01-3 3H9a3 3 0 01-3-3z" />
+                          </svg>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => downloadSitemap(sitemap.id)}
+                        class="p-2 text-green-600 hover:bg-green-50 rounded"
+                        title="下载XML文件"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
       
       {error && (
         <div class={`p-4 mb-6 ${error.includes('成功') ? 'bg-green-100 border-l-4 border-green-500 text-green-700' : 'bg-red-100 border-l-4 border-red-500 text-red-700'} transition-opacity duration-300`}>
