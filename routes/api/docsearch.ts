@@ -4,12 +4,28 @@ import { Handlers } from "$fresh/server.ts";
 // 初始化KV数据库
 const kv = await Deno.openKv();
 
+// Tavily API配置
+const TAVILY_API_KEY = "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";
+const TAVILY_API_URL = "https://api.tavily.com/search";
+
 interface DocSearchResult {
   keyword: string;
   docSites: string[];
   mainDocUrl: string | null;
   sublinks: string[];
   timestamp: number;
+}
+
+interface TavilySearchResult {
+  query: string;
+  answer?: string;
+  results: {
+    title: string;
+    url: string;
+    content: string;
+    score: number;
+  }[];
+  response_time: string;
 }
 
 // 常见文档网站的模式
@@ -54,8 +70,8 @@ export const handler: Handlers = {
       // 开始搜索过程
       console.log(`开始搜索文档网站: ${keyword}`);
       
-      // 1. 搜索可能的文档网站
-      const possibleDocSites = await searchPossibleDocSites(keyword);
+      // 1. 使用Tavily API搜索可能的文档网站
+      const possibleDocSites = await searchWithTavily(keyword);
       
       // 2. 如果找到了可能的文档网站，选择最合适的一个
       let mainDocUrl = null;
@@ -99,14 +115,14 @@ export const handler: Handlers = {
   }
 };
 
-// 搜索可能的文档网站
-async function searchPossibleDocSites(keyword: string): Promise<string[]> {
+// 使用Tavily API搜索
+async function searchWithTavily(keyword: string): Promise<string[]> {
   try {
     // 构建搜索查询
     const searchQueries = [
       `${keyword} documentation`,
       `${keyword} docs`,
-      `${keyword} developer`,
+      `${keyword} developer docs`,
       `${keyword} api reference`
     ];
     
@@ -115,44 +131,48 @@ async function searchPossibleDocSites(keyword: string): Promise<string[]> {
     // 对每个查询进行搜索
     for (const query of searchQueries) {
       try {
-        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-        const response = await fetch(searchUrl, {
+        const response = await fetch(TAVILY_API_URL, {
+          method: "POST",
           headers: {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          }
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${TAVILY_API_KEY}`
+          },
+          body: JSON.stringify({
+            query,
+            search_depth: "basic",
+            include_domains: [],
+            exclude_domains: [],
+            max_results: 10
+          })
         });
         
         if (!response.ok) {
-          console.warn(`搜索请求失败: ${query}, 状态码: ${response.status}`);
+          console.warn(`Tavily搜索请求失败: ${query}, 状态码: ${response.status}`);
           continue;
         }
         
-        const html = await response.text();
+        const data = await response.json() as TavilySearchResult;
         
-        // 提取搜索结果中的URL
-        // 简单方式：提取所有href属性
-        const urlRegex = /href=["'](https?:\/\/[^"']+)["']/gi;
-        let match;
-        
-        while ((match = urlRegex.exec(html)) !== null) {
-          const url = match[1];
-          // 过滤掉不相关的搜索结果
-          if (isRelevantDocSite(url, keyword)) {
-            try {
-              // 规范化URL
-              const normalizedUrl = new URL(url).origin;
-              allResults.add(normalizedUrl);
-            } catch (e) {
-              // 忽略无效的URL
+        // 处理搜索结果
+        if (data.results && Array.isArray(data.results)) {
+          for (const result of data.results) {
+            if (isRelevantDocSite(result.url, keyword)) {
+              try {
+                // 规范化URL
+                const normalizedUrl = new URL(result.url).origin;
+                allResults.add(normalizedUrl);
+              } catch (e) {
+                // 忽略无效的URL
+              }
             }
           }
         }
       } catch (e) {
-        console.warn(`处理搜索查询时出错: ${query}`, e);
+        console.warn(`处理Tavily搜索查询时出错: ${query}`, e);
       }
     }
     
-    // 如果通过google搜索没有找到结果，尝试直接猜测文档URL
+    // 如果没有找到结果，尝试直接猜测文档URL
     if (allResults.size === 0) {
       const guessedUrls = [
         `https://docs.${keyword}.com`,
@@ -177,7 +197,7 @@ async function searchPossibleDocSites(keyword: string): Promise<string[]> {
     
     return Array.from(allResults);
   } catch (error) {
-    console.error("搜索文档网站时出错:", error);
+    console.error("使用Tavily搜索文档网站时出错:", error);
     return [];
   }
 }
